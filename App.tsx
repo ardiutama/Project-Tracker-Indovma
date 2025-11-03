@@ -35,12 +35,13 @@ const App: React.FC = () => {
         setIsLoading(false);
         setProjects([]);
         setProfile(null);
+        setActiveProjectId(null);
+        setView('list');
         return;
       }
 
       setIsLoading(true);
 
-      // Fetch Profile
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
@@ -53,8 +54,6 @@ const App: React.FC = () => {
         setProfile(profileData);
       }
 
-      // Fetch Projects accessible by the user (as owner or member)
-      // RLS policies on the database will handle the filtering.
       const { data, error } = await supabase
         .from('projects')
         .select('*, phases(*, reports(*, comments(*))), project_members(*, profile:user_profiles(full_name, role))')
@@ -91,73 +90,48 @@ const App: React.FC = () => {
   const handleCreateProject = async (
     name: string,
     startDate: Date,
-    phase1Duration: number,
-    phase1Pay: number,
-    phase1Cost: number,
-    phase2Pay: number,
-    phase2Cost: number,
-    phase3Pay: number,
-    phase3Cost: number
+    phaseDurations: { p1: number; p2: number; p3: number },
+    phasePayments: { p1: number; p2: number; p3: number },
+    phaseCosts: { p1: number; p2: number; p3: number }
   ) => {
-    if (!session) return;
-    const { data: projectData, error: projectError } = await supabase
-      .from('projects')
-      .insert({ name, owner_id: session.user.id })
-      .select()
-      .single();
-
-    if (projectError || !projectData) {
-      console.error('Error creating project:', projectError);
-      return;
-    }
-    
-    const newProjectId = projectData.id;
-    const phasesToCreate: Omit<Phase, 'id' | 'status' | 'paymentStatus' | 'reports' | 'progress'>[] = [];
-    let currentStartDate = new Date(startDate);
-    
-    const phaseDetails = [
-      { name: 'Fase 1: Pre-Design & Conceptual Design', duration: phase1Duration, payment: phase1Pay, cost: phase1Cost },
-      { name: 'Fase 2: Schematic Design & Design Development', duration: 2, payment: phase2Pay, cost: phase2Cost },
-      { name: 'Fase 3: Construction Documentation (CD)', duration: 3, payment: phase3Pay, cost: phase3Cost },
-    ];
-
-    phaseDetails.forEach((detail) => {
-      const endDate = new Date(currentStartDate);
-      endDate.setMonth(endDate.getMonth() + detail.duration);
-      phasesToCreate.push({
-        name: detail.name,
-        startDate: new Date(currentStartDate),
-        endDate: endDate,
-        paymentPercentage: detail.payment,
-        cost: detail.cost,
-        project_id: newProjectId,
+    setIsLoading(true);
+    try {
+      const { data: newProjectData, error } = await supabase.rpc('create_project_and_return_data', {
+        project_name: name,
+        start_date: startDate.toISOString(),
+        phase1_duration_months: phaseDurations.p1,
+        phase2_duration_months: phaseDurations.p2,
+        phase3_duration_months: phaseDurations.p3,
+        phase1_payment_percent: phasePayments.p1,
+        phase2_payment_percent: phasePayments.p2,
+        phase3_payment_percent: phasePayments.p3,
+        phase1_cost_amount: phaseCosts.p1,
+        phase2_cost_amount: phaseCosts.p2,
+        phase3_cost_amount: phaseCosts.p3,
       });
-      currentStartDate = new Date(endDate);
-      currentStartDate.setDate(currentStartDate.getDate() + 1);
-    });
 
-    const { data: phasesData, error: phasesError } = await supabase.from('phases').insert(phasesToCreate).select();
-    
-    if (phasesError || !phasesData) {
-        console.error("Error creating phases", phasesError);
-        return;
+      if (error) throw error;
+      if (!newProjectData) throw new Error("Database tidak mengembalikan data proyek baru.");
+      
+      const newProjectWithDates: Project = {
+          ...newProjectData,
+          phases: newProjectData.phases.map((phase: any) => ({
+            ...phase,
+            startDate: new Date(phase.startDate),
+            endDate: new Date(phase.endDate),
+          })),
+      };
+
+      setProjects(prevProjects => [newProjectWithDates, ...prevProjects].sort((a,b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()));
+      setActiveProjectId(newProjectWithDates.id);
+      setView('dashboard');
+
+    } catch (error: any) {
+      alert(`Gagal membuat proyek: ${error.message}\n\nIni adalah error dari database. Pastikan Anda sudah menjalankan skrip RPC terbaru dan memiliki peran admin.`);
+      console.error('Error in handleCreateProject (RPC):', error);
+    } finally {
+      setIsLoading(false);
     }
-
-    const newProject: Project = {
-        ...projectData,
-        owner_id: session.user.id,
-        phases: phasesData.map(p => ({
-            ...p,
-            startDate: new Date(p.startDate),
-            endDate: new Date(p.endDate),
-            reports: [],
-        })),
-        project_members: []
-    };
-
-    setProjects(prevProjects => [newProject, ...prevProjects]);
-    setActiveProjectId(newProject.id);
-    setView('dashboard');
   };
 
   const updateProjectInState = (projectId: string, updatedProject: Project) => {
@@ -259,7 +233,7 @@ const App: React.FC = () => {
     if (error) {
       throw new Error(error.message);
     }
-    // Re-fetch projects to show the new member
+
     const { data, error: fetchError } = await supabase
       .from('projects')
       .select('*, phases(*, reports(*, comments(*))), project_members(*, profile:user_profiles(full_name, role))')
@@ -294,7 +268,6 @@ const App: React.FC = () => {
     
     if (error) {
       console.error('Error updating project name:', error);
-      // Optionally, revert UI change
     } else {
       setProjects(projects.map(p => p.id === projectId ? { ...p, name: newName } : p));
     }
