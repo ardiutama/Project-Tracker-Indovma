@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const CalendarIcon = ({ className = "w-6 h-6", ...props }: React.ComponentProps<'svg'>) => (

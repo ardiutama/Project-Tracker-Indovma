@@ -1,3 +1,5 @@
+
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Project, Phase, Report, Comment, PhaseStatus, PaymentStatus, Profile } from './types';
 import NewProjectForm from './components/NewProjectForm';
@@ -304,9 +306,12 @@ const App: React.FC = () => {
   }, [activeProject]);
 
   const handleLogout = async () => {
+    if (isLoading) return; // Guard against logout during another operation
+    setIsLoading(true);
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('Error logging out:', error);
+      setIsLoading(false);
     }
   };
 
@@ -353,22 +358,24 @@ const App: React.FC = () => {
     <div className="min-h-screen">
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 cursor-pointer" onClick={() => { setActiveProjectId(null); setView('list'); }}>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 cursor-pointer" onClick={() => { if (!isLoading) { setActiveProjectId(null); setView('list'); } }}>
             Project Tracker
           </h1>
           <div className="flex items-center gap-4">
             {profile && <span className="text-sm text-slate-600 hidden sm:block">Login sebagai: <span className="font-semibold">{profile.full_name || session.user.email}</span></span>}
             {view === 'dashboard' ? (
               <button
-                onClick={() => { setActiveProjectId(null); setView('list'); }}
-                className="text-sm bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                onClick={() => { if (!isLoading) { setActiveProjectId(null); setView('list'); } }}
+                className="text-sm bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                disabled={isLoading}
               >
                 Daftar Proyek
               </button>
             ) : (
               <button
                 onClick={handleLogout}
-                className="text-sm bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                className="text-sm bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                disabled={isLoading}
               >
                 Logout
               </button>
