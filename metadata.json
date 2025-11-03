@@ -1,0 +1,5 @@
+{
+  "name": "Project Tracker",
+  "description": "An application to help small architectural agencies manage design projects efficiently from start to finish, tracking phases, progress, payments, and team reports.",
+  "requestFramePermissions": []
+}
